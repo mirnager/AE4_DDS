@@ -35,7 +35,7 @@ Se proporcionan los siguentes archivos:
 
 ```{r tidy_data, echo=FALSE}
 
-base_path <- "./"
+base_path <- "./Modelo_Inicial/"
 # por ejemplo....
 #base_path <- "~/OneDrive/material classes/UPC/2024-12/assignments/AE4/"
 
