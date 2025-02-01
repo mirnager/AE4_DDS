@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library("jsonlite", warn.conflicts = FALSE)
 library("ggplot2", warn.conflicts = FALSE)
 library("lattice", warn.conflicts = FALSE)
-library("caret", warn.conflicts = T)
+library("caret", warn.conflicts = FALSE)
 library("gbm", warn.conflicts = FALSE)
 library("pROC", warn.conflicts = FALSE)
 
@@ -37,7 +37,7 @@ Se proporcionan los siguentes archivos:
 
 base_path <- "./"
 # por ejemplo....
-#base_path <- "~/OneDrive/material classes/UPC/2024-12/assignments/AE4/"
+#base_path <- "https://github.com/mirnager/AE4_DDS/tree/development/fernando/Modelo_Inicial"
 
 events <- read.csv(paste(base_path, "events_sample.csv", sep = ""))
 features <- read.csv(paste(base_path, "features.csv", sep = ""))
@@ -74,6 +74,17 @@ outcomeName <- 'Label'
 predictorsNames <- names(events)[names(events) != outcomeName]
 
 prop.table(table(events$Label))
+
+#PRUEBAS######_____
+
+tabla_Label_Attack <- subset(events, Label == "ATTACK")
+
+tabla_DsPort_Attack <- table(tabla_Label_Attack$dsport)
+print(tabla_DsPort_Attack)
+
+tabla_DsIP_Attack <- table(tabla_Label_Attack$dstip)
+print(tabla_DsIP_Attack)
+
 ```
 
 ## Build model
@@ -95,7 +106,28 @@ objControl <- caret::trainControl(method = 'none',
                            returnResamp = 'none',
                            summaryFunction = twoClassSummary,
                            classProbs = TRUE)
+
 ```
+
+```{r Código Mejorado Validación Cruzada}
+
+#En el código actual, el modelo se entrena sin validación cruzada (method = 'none'). Esto significa que el modelo se entrena con un único conjunto de datos de entrenamiento, lo que puede llevar a sobreajuste (overfitting) y a una menor generalización del modelo.
+#Cambios propuestos:
+#-Implementar validación cruzada para evaluar el modelo en múltiples subconjuntos de datos.
+#-Usar un método de validación cruzada como cv (cross-validation) con un número adecuado de folds (por ejemplo, 5 o 10).
+
+objControl <- caret::trainControl(
+  method = 'cv',          # Usar validación cruzada
+  number = 5,             # Número de folds (por ejemplo, 5)
+  returnResamp = 'none',
+  summaryFunction = twoClassSummary,
+  classProbs = TRUE,
+  savePredictions = TRUE  # Guardar predicciones para evaluación
+)
+
+```
+
+
 
 ### Train the model
 
@@ -107,6 +139,30 @@ objModel <- caret::train(trainDF[,predictorsNames], trainDF[,outcomeName],
                   preProc = c("center", "scale"))
 # summary(objModel)
 ```
+
+```{r Codigo Mejorado Grid Search}
+
+# Definir la cuadrícula de hiperparámetros
+gbmGrid <- expand.grid(
+  n.trees = c(50, 100, 150),       # Número de árboles
+  interaction.depth = c(3, 5, 7),  # Profundidad de los árboles
+  shrinkage = c(0.01, 0.1),        # Tasa de aprendizaje
+  n.minobsinnode = 10              # Mínimo de observaciones en nodos terminales
+)
+
+# Entrenar el modelo con la cuadrícula de hiperparámetros
+objModel <- caret::train(
+  trainDF[, predictorsNames], trainDF[, outcomeName],
+  method = 'gbm',
+  trControl = objControl,
+  metric = "ROC",
+  preProc = c("center", "scale"),
+  tuneGrid = gbmGrid  # Usar la cuadrícula de hiperparámetros
+)
+
+
+```
+
 
 ### Test model
 
@@ -130,6 +186,7 @@ print(auc$auc)
 
 ```{r var_importance}
 plot(caret::varImp(objModel, scale = F))
+
 ```
 
 ## Conclusiones
