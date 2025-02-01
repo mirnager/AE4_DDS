@@ -5,7 +5,7 @@ date: "06/01/2025"
 output: html_document
 ---
 
-```{r setup, include=FALSE, cache=TRUE}
+```{r setup, include=FALSE, cache=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
 library("jsonlite", warn.conflicts = FALSE)
@@ -75,6 +75,11 @@ predictorsNames <- names(events)[names(events) != outcomeName]
 
 prop.table(table(events$Label))
 
+
+```
+
+```{r prueba, include=FALSE}
+
 #PRUEBAS######_____
 
 tabla_Label_Attack <- subset(events, Label == "ATTACK")
@@ -86,6 +91,7 @@ tabla_DsIP_Attack <- table(tabla_Label_Attack$dstip)
 print(tabla_DsIP_Attack)
 
 ```
+
 
 ## Build model
 
@@ -109,14 +115,14 @@ objControl <- caret::trainControl(method = 'none',
 
 ```
 
-```{r Código Mejorado Validación Cruzada}
+```{r Código Mejorado Validación Cruzada, echo=FALSE}
 
 #En el código actual, el modelo se entrena sin validación cruzada (method = 'none'). Esto significa que el modelo se entrena con un único conjunto de datos de entrenamiento, lo que puede llevar a sobreajuste (overfitting) y a una menor generalización del modelo.
 #Cambios propuestos:
 #-Implementar validación cruzada para evaluar el modelo en múltiples subconjuntos de datos.
 #-Usar un método de validación cruzada como cv (cross-validation) con un número adecuado de folds (por ejemplo, 5 o 10).
 
-objControl <- caret::trainControl(
+objControl2 <- caret::trainControl(
   method = 'cv',          # Usar validación cruzada
   number = 5,             # Número de folds (por ejemplo, 5)
   returnResamp = 'none',
@@ -140,7 +146,7 @@ objModel <- caret::train(trainDF[,predictorsNames], trainDF[,outcomeName],
 # summary(objModel)
 ```
 
-```{r Codigo Mejorado Grid Search}
+```{r Codigo Mejorado Grid Search, echo=FALSE}
 
 # Definir la cuadrícula de hiperparámetros
 gbmGrid <- expand.grid(
@@ -151,10 +157,10 @@ gbmGrid <- expand.grid(
 )
 
 # Entrenar el modelo con la cuadrícula de hiperparámetros
-objModel <- caret::train(
+objModel2 <- caret::train(
   trainDF[, predictorsNames], trainDF[, outcomeName],
   method = 'gbm',
-  trControl = objControl,
+  trControl = objControl2,
   metric = "ROC",
   preProc = c("center", "scale"),
   tuneGrid = gbmGrid  # Usar la cuadrícula de hiperparámetros
@@ -171,11 +177,25 @@ predictions <- predict(object = objModel, testDF[, predictorsNames], type = 'raw
 #head(predictions)
 ```
 
+```{r Codigo Mejorado model_test, echo=FALSE}
+
+predictions2 <- predict(object = objModel2, testDF[, predictorsNames], type = 'raw')
+#head(predictions)
+
+```
+
+
+
 ## Evaluate model
 
 ```{r model_eval, echo=FALSE}
 print(caret::postResample(pred = predictions, obs = as.factor(testDF[,outcomeName])))
 ```
+
+```{r Codigo Mejorado model_eval, echo=FALSE}
+print(caret::postResample(pred = predictions2, obs = as.factor(testDF[,outcomeName])))
+```
+
 
 ```{r predic_prob}
 # probabilites
@@ -184,8 +204,27 @@ auc <- pROC::roc(ifelse(testDF[,outcomeName] == "ATTACK",1,0), predictions[[2]])
 print(auc$auc)
 ```
 
+
+```{r Codigo mejorado predic_prob}
+# probabilites
+predictions2 <- predict(object = objModel2, testDF[,predictorsNames], type = 'prob')
+auc <- pROC::roc(ifelse(testDF[,outcomeName] == "ATTACK",1,0), predictions2[[2]])
+print(auc$auc)
+```
+
 ```{r var_importance}
 plot(caret::varImp(objModel, scale = F))
+
+
+
+```
+
+
+
+```{r Codigo Mejorado var_importance}
+plot(caret::varImp(objModel2, scale = F))
+
+
 
 ```
 
