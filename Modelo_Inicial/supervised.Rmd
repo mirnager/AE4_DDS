@@ -3,8 +3,8 @@ title: "Supervised Learning"
 author: "<you_names_here>"
 date: "06/01/2025"
 output:
-  word_document: default
   html_document: default
+  word_document: default
   pdf_document: default
 ---
 
@@ -22,6 +22,8 @@ library("e1071", warn.conflicts = FALSE)
 library("ModelMetrics", warn.conflicts = FALSE)
 
 library(dplyr)
+
+
 
 set.seed(42)
 ```
@@ -61,6 +63,7 @@ features <- read.csv(paste(base_path, "features.csv", sep = ""))
 ```{r data_enrich, echo=FALSE}
 
 summary(events)
+
 
 ```
 

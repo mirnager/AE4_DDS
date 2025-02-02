@@ -260,7 +260,7 @@ predictions2 <- predict(object = objModel2, testDF[, predictorsNames], type = 'r
 
 ## Evaluate model
 
-Se evalua el porcentaje de aciertos de la muestra de test. 
+Se evalua el porcentaje de aciertos de la muestra de test y se observa un aumento tanto en la precisión como en el kappa respecto al modelo inicial.
 
 ```{r Codigo Mejorado model_eval, echo=FALSE}
 print(caret::postResample(pred = predictions2, obs = as.factor(testDF[,outcomeName])))
