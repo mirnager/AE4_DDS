@@ -98,7 +98,7 @@ print(tabla_DsIP_Attack)
 ### Create train and test data sets
 
 ```{r train_test, echo=FALSE}
-splitIndex <- caret::createDataPartition(events[,outcomeName], p = .25, list = FALSE, times = 1)
+splitIndex <- caret::createDataPartition(events[,outcomeName], p = .2, list = FALSE, times = 1)
 
 trainDF <- events[ splitIndex,]
 testDF  <- events[-splitIndex,]
@@ -131,6 +131,7 @@ objControl2 <- caret::trainControl(
   savePredictions = TRUE  # Guardar predicciones para evaluación
 )
 
+
 ```
 
 
@@ -150,7 +151,7 @@ objModel <- caret::train(trainDF[,predictorsNames], trainDF[,outcomeName],
 
 # Definir la cuadrícula de hiperparámetros
 gbmGrid <- expand.grid(
-  n.trees = c(50, 100, 150),       # Número de árboles
+  n.trees = c(200, 300, 400),       # Número de árboles
   interaction.depth = c(3, 5, 7),  # Profundidad de los árboles
   shrinkage = c(0.01, 0.1),        # Tasa de aprendizaje
   n.minobsinnode = 10              # Mínimo de observaciones en nodos terminales
@@ -166,6 +167,7 @@ objModel2 <- caret::train(
   tuneGrid = gbmGrid  # Usar la cuadrícula de hiperparámetros
 )
 
+Valores_Guardados_Prediccion <- objModel2$pred
 
 ```
 
