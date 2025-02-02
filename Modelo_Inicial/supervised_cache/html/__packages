@@ -7,3 +7,4 @@ pROC
 e1071
 ModelMetrics
 yardstick
+dplyr

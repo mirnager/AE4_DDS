@@ -1,3 +1,10 @@
+base
+methods
+datasets
+utils
+grDevices
+graphics
+stats
 jsonlite
 ggplot2
 lattice
@@ -7,6 +14,3 @@ pROC
 e1071
 ModelMetrics
 dplyr
-DT
-PRROC
-MLmetrics

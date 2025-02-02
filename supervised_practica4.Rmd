@@ -5,19 +5,25 @@ date: "06/01/2025"
 output: html_document
 ---
 
-```{r setup, include=FALSE, cache=TRUE}
+```{r setup, include=FALSE, cache=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+rm(list = ls())
 
 library("jsonlite", warn.conflicts = FALSE)
 library("ggplot2", warn.conflicts = FALSE)
 library("lattice", warn.conflicts = FALSE)
-library("caret", warn.conflicts = T)
+library("caret", warn.conflicts = FALSE)
 library("gbm", warn.conflicts = FALSE)
 library("pROC", warn.conflicts = FALSE)
 
 library("e1071", warn.conflicts = FALSE)
 library("ModelMetrics", warn.conflicts = FALSE)
 
+library(dplyr)
+library(DT)
+library(PRROC)
+library(MLmetrics)
 
 set.seed(42)
 ```
@@ -36,8 +42,6 @@ Se proporcionan los siguentes archivos:
 ```{r tidy_data, echo=FALSE}
 
 base_path <- "./Modelo_Inicial/"
-# por ejemplo....
-#base_path <- "~/OneDrive/material classes/UPC/2024-12/assignments/AE4/"
 
 events <- read.csv(paste(base_path, "events_sample.csv", sep = ""))
 features <- read.csv(paste(base_path, "features.csv", sep = ""))
@@ -45,6 +49,26 @@ features <- read.csv(paste(base_path, "features.csv", sep = ""))
 
 ### Events analysis/exploration
 
+Al analizar los dos ficheros de entrada vemos que el fichero features describe los campos que aparecen en events, por lo que puede servir de base para verificar el contenido del fichero events y las tipologías de datos.
+
+El número de observaciones en el fichero de eventos es `r length(events$srcip)`, lo que hemos considerado como un tamaño mediano de registros. 
+
+Cuando observamos los datos, vemos que algunos no se han importado en el tipo correcto y se tendrán que transformar en datos elegantes.
+
+- srcip, dstip, proto, state, service y attack_cat deben ser factores
+- Stime y Ltime son números en formato timestamp de UNIX pero se mantendrán como numéricos para facilitar el análisis
+- Existen varios binarios que se han importado como entero
+
+Además, a simple vista y dada la tipología de la información, parece que algunas de las columnas están correlacionadas. 
+
+Cuatro columnas tienen valores NA: service, ct_flw_http_mthd, is_ftp_login, ct_ftp_cmd
+
+Finalmente se identifica que para cada observación se indica en la columna "Label" si la observación se corresponde a un ataque o es una observación normal; lo que nos permite implementar un algoritmo de aprendizaje supervisado de clasificación. 
+
+En la sección de data enrichment se mejorarán los datos para la preparación del modelo. 
+
+Comprobad el fichero features.csv incluido en la carpeta con los datos necesarios 
+para esta practica.
 
 ```{r events_stats, echo=FALSE}
 
@@ -53,89 +77,214 @@ features <- read.csv(paste(base_path, "features.csv", sep = ""))
 
 ### Data enrichment
 
+Para mejorar los datos y permitir que el modelo entrene más eficientemente y sin distorsiones se van a llevar a cabo diferentes acciones:
+
+- Preparación de los datos con los tipos adecuados (binarios, factores, etc.)
+- Eliminación de NA
+- Normalización de los datos númericos
+- Eliminación de los datos con varianza que tiende a cero
+- Eliminación de parámetros redundantes o correlacionados con otros parámetros
+
+Así se conseguirá que el modelo se genere en menor tiempo y los resultados sean mejores. 
+
 ```{r data_enrich, echo=FALSE}
 
+#Se quitan los NA y se transforman los binarios
+events$is_sm_ips_ports <- ifelse(events$is_sm_ips_ports== 1, "EQUAL", "NOEQUAL")
+events$is_sm_ips_ports <- as.factor(events$is_sm_ips_ports)
+
+events$is_ftp_login <- ifelse(events$is_ftp_login== 1,"WITH_PASSWORD","WITHOUT_PASSWORD")
+events$is_ftp_login[is.na(events$is_ftp_login)] <- "UNKNOWN"
+events$is_ftp_login <- as.factor(events$is_ftp_login)
+
+# Etiquetamos la columna Label con valores categoricos
+events$Label <- ifelse(events$Label == 1, "ATTACK", "NORMAL")
+events$Label <- as.factor(events$Label)
+events$attack_cat <- NULL
+
+#Se quitan los NA y se transforman los  nominales a tipo factor
+events$srcip <- as.factor(events$srcip)
+events$dstip <- as.factor(events$dstip)
+events$proto <- as.factor(events$proto)
+events$state <- as.factor(events$state)
+
+events$service[is.na(events$service)] <- "UNKNOWN"
+events$service <- as.factor(events$service)
+
+events$is_sm_ips_ports <- as.factor(events$is_sm_ips_ports)
+events$is_ftp_login <- as.factor(events$is_ftp_login)
+events$Label <- as.factor(events$Label)
+
+#Se quitan los NA de los númericos y se transforman
+events[is.na(events)] <- 0
+
+#Se separan lo datos en valores númericos y no númericos
+numeric_events <- events %>% select(where(is.numeric))
+
+#Númericos: eliminamos parámetros con varianza cercana a 0 -> synack, ackdat, ct_ftp_cmd y ct_dst_sport_ltm
+events_nzv <- nearZeroVar(numeric_events, saveMetrics=TRUE)
+
+nzv_names <- rownames(events_nzv[events_nzv$nzv == TRUE, ])
+
+numeric_events <- numeric_events[, !names(numeric_events) %in% nzv_names]
+events <- events[, !names(events) %in% nzv_names]
+
+#Númericos: eliminamos correlaciones y combinaciones lineales
+cor_names <- findCorrelation(cor(numeric_events), verbose = FALSE, names = TRUE)
+
+numeric_events <- numeric_events[, !names(numeric_events) %in% cor_names]
+events <- events[, !names(events) %in% cor_names]
+
+#Númericos: buscamos combinaciones lineales, no hay ninguna
+lc_index <- findLinearCombos(numeric_events)$remove
+
+
+if (is.null(lc_index)) {lc_index <- "No hay combinaciones lineales."}
 
 ```
 
+Columnas eliminadas por tener una varianza cercana a cero: *`r nzv_names`*
+
+Columnas eliminadas por correlación: *`r cor_names`*
+
+Columnas eliminadas por combinaciones lineales: *`r lc_index `* 
+
 ## Feature engineering
+
+Se define la Label como resultado y se establece el porcentaje de observaciones clasificadas como normales y ataque.
 
 ```{r feat_eng, echo=FALSE}
 # El modelo requiere nombres de columna simples y features numericas o factor
 names(events) <- stringr::str_replace_all(names(events), "_", "")
 events <- as.data.frame(unclass(events), stringsAsFactors = TRUE)
 
-# Etiquetamos la columna Label con valores categoricos
-events$Label <- ifelse(events$Label == 1, "ATTACK", "NORMAL")
-events$Label <- as.factor(events$Label)
-events$attackcat <- NULL
-
 outcomeName <- 'Label'
 predictorsNames <- names(events)[names(events) != outcomeName]
 
 prop.table(table(events$Label))
+
+
 ```
 
 ## Build model
 
 ### Create train and test data sets
 
-```{r train_test, echo=FALSE}
-splitIndex <- caret::createDataPartition(events[,outcomeName], p = .25, list = FALSE, times = 1)
+Se modifica el porcentaje de datos utilizados para entrenar: 
+
+- 80% para entrenar el modelo
+- 20% para testear el modelo 
+
+Se verifican además las proporciones en cada conjunto confirmando que no están balanceadas: 
+
+```{r Codigo Mejorado train_test, echo=FALSE}
+splitIndex <- caret::createDataPartition(events[,outcomeName], p = .80, list = FALSE, times = 1)
 
 trainDF <- events[ splitIndex,]
 testDF  <- events[-splitIndex,]
+
+# Verificamos las proporciones en cada conjunto
+print("Entreno: ")
+prop.table(table(trainDF[[outcomeName]]))
+print("Test: ")
+prop.table(table(testDF[[outcomeName]]))
 ```
 
 ### Prepare object with training configuration (how we are gonna train the model)
 
-```{r model_config, echo=FALSE}
-# Consulta https://es.wikipedia.org/wiki/Validaci%C3%B3n_cruzada
-objControl <- caret::trainControl(method = 'none',
-                           returnResamp = 'none',
-                           summaryFunction = twoClassSummary,
-                           classProbs = TRUE)
+En el código inicial, el modelo se entrena sin validación cruzada (method = 'none'). Esto significa que el modelo se entrena con un único conjunto de datos de entrenamiento, lo que puede llevar a sobreajuste (overfitting) y a una menor generalización del modelo.
+
+Cambios propuestos:
+
+- Implementar validación cruzada para evaluar el modelo en múltiples subconjuntos de datos.
+- Usar un método de validación cruzada como cv (cross-validation) con un número adecuado de folds (por ejemplo, 5 o 10).
+
+
+```{r Codigo Mejorado model_config, echo=FALSE}
+
+objControl2 <- caret::trainControl(
+  method = 'cv',          # Usar validación cruzada
+  number = 10,             # Número de folds (por ejemplo, 10)
+  returnResamp = 'none',
+  summaryFunction = twoClassSummary,
+  classProbs = TRUE,
+  savePredictions = TRUE,  # Guardar predicciones para evaluación
+  verboseIter = FALSE
+)
+
 ```
 
 ### Train the model
 
-```{r model_train, echo=FALSE}
-objModel <- caret::train(trainDF[,predictorsNames], trainDF[,outcomeName],
-                  method = 'gbm',
-                  trControl = objControl,
-                  metric = "ROC",
-                  preProc = c("center", "scale"))
-# summary(objModel)
+Se entrena el modelo con el algoritmo original (GBM) y configurando los hiperparámetros. 
+
+Se ha probado diferentes métricas y tipos de procesamiento como PCA, pero no se ha visto mejora en los resultados.  
+
+```{r Codigo Mejorado model_train, echo=TRUE, cache=TRUE}
+
+# Definir la cuadrícula de hiperparámetros
+gbmGrid <- expand.grid(
+   n.trees = c(150, 300, 550),     # Número de árboles
+   interaction.depth = c(3, 5, 7),   # Profundidad de los árboles
+   shrinkage = c(0.01,0.1),         # Tasa de aprendizaje
+   n.minobsinnode = 10        # Mínimo de observaciones en nodos terminales
+)
+
+# Entrenar el modelo con la cuadrícula de hiperparámetros
+objModel2 <- caret::train(
+  trainDF[, predictorsNames], 
+  trainDF[, outcomeName],
+  method = 'gbm',
+  trControl = objControl2,
+  metric = "ROC",
+  preProc = c("scale", "center"),
+  tuneGrid = gbmGrid  # Usar la cuadrícula de hiperparámetros
+)
+
+
 ```
 
 ### Test model
 
-```{r model_test, echo=FALSE}
-predictions <- predict(object = objModel, testDF[, predictorsNames], type = 'raw')
+Se realiza el cálculo de la muestra de test.
+
+```{r Codigo Mejorado model_test, echo=FALSE}
+
+
+predictions2 <- predict(object = objModel2, testDF[, predictorsNames], type = 'raw')
 #head(predictions)
+
 ```
+
+
 
 ## Evaluate model
 
-```{r model_eval, echo=FALSE}
-print(caret::postResample(pred = predictions, obs = as.factor(testDF[,outcomeName])))
+Se evalua el porcentaje de aciertos de la muestra de test. 
+
+```{r Codigo Mejorado model_eval, echo=FALSE}
+print(caret::postResample(pred = predictions2, obs = as.factor(testDF[,outcomeName])))
 ```
 
-```{r predic_prob}
+
+```{r Codigo Mejorado predic_prob}
 # probabilites
-predictions <- predict(object = objModel, testDF[,predictorsNames], type = 'prob')
-auc <- pROC::roc(ifelse(testDF[,outcomeName] == "ATTACK",1,0), predictions[[2]])
+predictions2 <- predict(object = objModel2, testDF[,predictorsNames], type = 'prob')
+auc <- pROC::roc(ifelse(testDF[,outcomeName] == "ATTACK",1,0), predictions2[[2]])
 print(auc$auc)
 ```
 
-```{r var_importance}
-plot(caret::varImp(objModel, scale = F))
+```{r Codigo Mejorado var_importance}
+plot(caret::varImp(objModel2, scale = F))
+
+
 ```
 
 ## Conclusiones
 
-Aqui deben incluirse los cambios hechos en el codigo que han incrementado la precision del modelo.
-```{r conclusion, echo=FALSE}
-# opcional, solo rellenar si hay algo de codigo que mostrar. Borrar en caso contrario
+Para incrementar la precisión del modelo se han realizado los cambios siguientes: 
 
-```
+1. Se han analizado los datos y se han enriquecido, convirtiendolos a datos elegantes: convirtiendolos a tipos adecuados, eliminando NAs y eliminando columnas redundantes o con poca variabilidad.
+2. Se ha cambiado el % de observaciones dedicadas al entreno incrementando el valor hasta el 80%
+3. Se ha verificado que el algorimo GGBM (Gradient Boosting Machine) era adecuado para el ejercicio de clasificación que se quería hacer y se han configurado los hiperparámetros
+

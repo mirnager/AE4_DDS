@@ -2,7 +2,10 @@
 title: "Supervised Learning"
 author: "<you_names_here>"
 date: "06/01/2025"
-output: html_document
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE, cache=TRUE}
@@ -18,6 +21,7 @@ library("pROC", warn.conflicts = FALSE)
 library("e1071", warn.conflicts = FALSE)
 library("ModelMetrics", warn.conflicts = FALSE)
 
+library(dplyr)
 
 set.seed(42)
 ```
@@ -41,6 +45,7 @@ base_path <- "./"
 
 events <- read.csv(paste(base_path, "events_sample.csv", sep = ""))
 features <- read.csv(paste(base_path, "features.csv", sep = ""))
+
 ```
 
 ### Events analysis/exploration
@@ -55,6 +60,7 @@ features <- read.csv(paste(base_path, "features.csv", sep = ""))
 
 ```{r data_enrich, echo=FALSE}
 
+summary(events)
 
 ```
 
@@ -119,6 +125,7 @@ predictions <- predict(object = objModel, testDF[, predictorsNames], type = 'raw
 
 ```{r model_eval, echo=FALSE}
 print(caret::postResample(pred = predictions, obs = as.factor(testDF[,outcomeName])))
+
 ```
 
 ```{r predic_prob}
@@ -137,5 +144,6 @@ plot(caret::varImp(objModel, scale = F))
 Aqui deben incluirse los cambios hechos en el codigo que han incrementado la precision del modelo.
 ```{r conclusion, echo=FALSE}
 # opcional, solo rellenar si hay algo de codigo que mostrar. Borrar en caso contrario
+
 
 ```
