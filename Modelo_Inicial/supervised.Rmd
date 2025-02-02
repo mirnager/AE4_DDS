@@ -98,10 +98,25 @@ print(tabla_DsIP_Attack)
 ### Create train and test data sets
 
 ```{r train_test, echo=FALSE}
-splitIndex <- caret::createDataPartition(events[,outcomeName], p = .2, list = FALSE, times = 1)
+splitIndex <- caret::createDataPartition(events[,outcomeName], p = .70, list = FALSE, times = 1)
 
 trainDF <- events[ splitIndex,]
 testDF  <- events[-splitIndex,]
+
+
+# createDataPartition() mantiene la proporción original de la variable objetivo (outcomeName) en ambos conjuntos.
+#Ejemplo:
+#Si tienes 1000 datos, donde:
+# 700 son "NORMAL" (70%)
+# 300 son "ATTACK" (30%)
+# Con p = 0.80, el conjunto de entrenamiento mantendría aproximadamente 560 "NORMAL" y 240 "ATTACK" (70%-30%), en lugar de una distribución aleatoria que podría desbalancear el modelo.
+
+# Conjunto de Datos - A continuacion se muestran la consideración para clasificar los datos en pequeños, medianos, grandes muy grandes y asi poder determinar p:
+#Pequeño (≤ 1,000) → Riesgo de sobreajuste, usar validación cruzada.
+#Mediano (1,000 – 100,000) → Balance entre entrenamiento y prueba.
+#Grande (≥ 100,000) → Se requieren optimizaciones computacionales.
+#Muy Grande (≥ 10,000,000) → Técnicas de Big Data y Deep Learning.
+
 ```
 
 ### Prepare object with training configuration (how we are gonna train the model)
@@ -145,13 +160,16 @@ objModel <- caret::train(trainDF[,predictorsNames], trainDF[,outcomeName],
                   metric = "ROC",
                   preProc = c("center", "scale"))
 # summary(objModel)
+
+
+
 ```
 
 ```{r Codigo Mejorado Grid Search, echo=FALSE}
 
 # Definir la cuadrícula de hiperparámetros
 gbmGrid <- expand.grid(
-  n.trees = c(200, 300, 400),       # Número de árboles
+  n.trees = c(300),       # Número de árboles
   interaction.depth = c(3, 5, 7),  # Profundidad de los árboles
   shrinkage = c(0.01, 0.1),        # Tasa de aprendizaje
   n.minobsinnode = 10              # Mínimo de observaciones en nodos terminales
@@ -168,6 +186,11 @@ objModel2 <- caret::train(
 )
 
 Valores_Guardados_Prediccion <- objModel2$pred
+
+results <- objModel2$results  # Datos del modelo ajustado
+plot(results$n.trees, results$ROC, type = 'b', pch = 19, col = 'blue',
+     xlab = 'Número de árboles', ylab = 'AUC', main = 'AUC vs. Número de árboles')
+
 
 ```
 
@@ -212,6 +235,22 @@ print(auc$auc)
 predictions2 <- predict(object = objModel2, testDF[,predictorsNames], type = 'prob')
 auc <- pROC::roc(ifelse(testDF[,outcomeName] == "ATTACK",1,0), predictions2[[2]])
 print(auc$auc)
+
+
+
+#auc$auc:
+#Este comando extrae el valor de AUC de la curva ROC calculada en el paso anterior. El valor del AUC es un número entre 0 y 1:
+#AUC ≈ 1: El modelo tiene una excelente capacidad de clasificación.
+#AUC ≈ 0.5: El modelo no es mejor que una clasificación aleatoria.
+#AUC ≈ 0: El modelo está completamente equivocado en sus predicciones.
+
+#Resumen del código:
+#Predicción de probabilidades: El modelo realiza predicciones en forma de probabilidades para cada clase, no solo las clases directas.
+#Cálculo de la curva ROC y AUC: Se calcula la curva ROC comparando las probabilidades de la clase positiva ("ATTACK") con las etiquetas reales del conjunto de prueba.
+#Evaluación del modelo: El valor del AUC nos da una medida de cuán bien el modelo puede discriminar entre las clases. Un AUC más alto indica un mejor rendimiento en términos de clasificación.
+#basicamente lo que se hace es comparar los valores del TestDF con el resultado (en valores de probabilidad) de los valores entrenados, por defecto si la probabilidad pasa del 0,5 se considera positivo(por desirlo de alguna manera seria igual a 1) e inferior se considera negativo
+
+
 ```
 
 ```{r var_importance}
